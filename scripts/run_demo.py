@@ -8,12 +8,19 @@
 
 
 import os,sys
+import argparse
+import imageio
+import torch
+import logging
+import cv2
+import numpy as np
+import open3d as o3d
 code_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(f'{code_dir}/../')
 from omegaconf import OmegaConf
 from core.utils.utils import InputPadder
-from Utils import *
-from core.foundation_stereo import *
+from Utils import set_logging_format, set_seed, vis_disparity, depth2xyzmap, toOpen3dCloud
+from core.foundation_stereo import FoundationStereo
 
 
 if __name__=="__main__":
@@ -116,12 +123,11 @@ if __name__=="__main__":
       o3d.io.write_point_cloud(f'{args.out_dir}/cloud_denoise.ply', inlier_cloud)
       pcd = inlier_cloud
 
-    logging.info("Visualizing point cloud. Press ESC to exit.")
-    vis = o3d.visualization.Visualizer()
-    vis.create_window()
-    vis.add_geometry(pcd)
-    vis.get_render_option().point_size = 1.0
-    vis.get_render_option().background_color = np.array([0.5, 0.5, 0.5])
-    vis.run()
-    vis.destroy_window()
-
+    # logging.info("Visualizing point cloud. Press ESC to exit.")
+    # vis = o3d.visualization.Visualizer()
+    # vis.create_window()
+    # vis.add_geometry(pcd)
+    # vis.get_render_option().point_size = 1.0
+    # vis.get_render_option().background_color = np.array([0.5, 0.5, 0.5])
+    # vis.run()
+    # vis.destroy_window()

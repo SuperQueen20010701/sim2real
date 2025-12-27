@@ -75,6 +75,40 @@ def depth2xyzmap(depth:np.ndarray, K, uvs:np.ndarray=None, zmin=0.1):
   return xyz_map
 
 
+def disparity_from_pcd_flat_ids(
+    pcd: "o3d.geometry.PointCloud",
+    flat_ids: np.ndarray,
+    H: int,
+    W: int,
+    fx: float,
+    baseline: float,
+    invalid_value: float = np.inf,
+) -> np.ndarray:
+  """
+  从点云转换回视差
+  """
+  disp_out = np.full((H, W), invalid_value, dtype=np.float32)
+  if pcd is None or len(pcd.points) == 0:
+    return disp_out
+
+  pts = np.asarray(pcd.points)
+  if pts.ndim != 2 or pts.shape[1] != 3:
+    return disp_out
+
+  z = pts[:, 2].astype(np.float32)
+  valid = np.isfinite(z) & (z > 1e-6)
+  disp_vals = np.full((len(z),), invalid_value, dtype=np.float32)
+  disp_vals[valid] = (float(fx) * float(baseline)) / z[valid]
+
+  flat_ids = np.asarray(flat_ids, dtype=np.int64).reshape(-1)
+  if flat_ids.shape[0] != disp_vals.shape[0]:
+    logging.warning(f"flat_ids size mismatch: flat_ids={flat_ids.shape[0]} vs points={disp_vals.shape[0]}")
+    return disp_out
+
+  disp_flat = disp_out.reshape(-1)
+  # flat_ids 已经是“去噪后剩余点”的像素位置；直接写回即可（孔洞保持 invalid_value）。
+  disp_flat[flat_ids] = disp_vals
+  return disp_out
 
 def freeze_model(model):
   model = model.eval()

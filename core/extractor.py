@@ -325,10 +325,24 @@ class Feature(nn.Module):
         super(Feature, self).__init__()
         self.args = args
         model = timm.create_model('edgenext_small', pretrained=True, features_only=False)
+        
+        print("="*80)
+        print("[Feature] [__init__] EdgeNeXt Model Structure Analysis")
+
+        print(f"\n[Model] Basic Information:")
+        print(f"  - Model type: {type(model).__name__}")
+        print(f"  - Model class: {type(model)}")
+
+        print(f"\n[Model] Top-level modules (named_children):")
+        for name, module in model.named_children():
+            print(f"  - {name}: {type(module).__name__}")
+        
+        # 提取stem和stages
         self.stem = model.stem
         self.stages = model.stages
         chans = [48, 96, 160, 304]
         self.chans = chans
+        
         self.dino = DepthAnythingFeature(encoder=self.args.vit_size)
         self.dino = freeze_model(self.dino)
         vit_feat_dim = DepthAnythingFeature.model_configs[self.args.vit_size]['features']//2
@@ -347,24 +361,47 @@ class Feature(nn.Module):
 
     def forward(self, x):
         B,C,H,W = x.shape
+        print(f"="*80)
+        print(f"[Feature] [forward] Input shape: {x.shape}")
+        
+        # 计算divider：patch_size=14, 16的最小公倍数
         divider = np.lcm(self.patch_size, 16)
         H_resize, W_resize = get_resize_keep_aspect_ratio(H,W, divider=divider, max_H=1344, max_W=1344)
         x_in_ = F.interpolate(x, size=(H_resize, W_resize), mode='bicubic', align_corners=False)
+        print(f"[Backbone] DINO input resized to: {x_in_.shape}")
+        
         self.dino = self.dino.eval()
         with torch.no_grad():
           output = self.dino(x_in_)
-        vit_feat = output['out']
+        vit_feat = output['out']  # DINO output shape: torch.Size([2, 128, 560, 1008])
+        print(f"[Backbone] DINO output shape: {vit_feat.shape}")
+        
         vit_feat = F.interpolate(vit_feat, size=(H//4,W//4), mode='bilinear', align_corners=True)
-        x = self.stem(x)
-        x4 = self.stages[0](x)
-        x8 = self.stages[1](x4)
-        x16 = self.stages[2](x8)
-        x32 = self.stages[3](x16)
+        print(f"[Backbone] DINO feature after interpolation: {vit_feat.shape}") # torch.Size([2, 128, 140, 252])
+        
+        # EdgeNeXt backbone forward pass
+        print(f"\n[Backbone] EdgeNeXt Forward Pass:")
+        print(f"  - Input to stem: {x.shape}")
+        # 对原始输出进行下采样
+        x = self.stem(x) #[2, 3, 544, 960]
+        print(f"  - After stem: {x.shape}, type: {type(self.stem).__name__}")
+        
+        x4 = self.stages[0](x) #[2, 48, 136, 240]
+        print(f"  - After stages[0]: {x4.shape}, channels: {x4.shape[1]}, expected: {self.chans[0]}, type: {type(self.stages[0]).__name__}")
+        
+        x8 = self.stages[1](x4) #[2, 96, 68, 120]
+        print(f"  - After stages[1]: {x8.shape}, channels: {x8.shape[1]}, expected: {self.chans[1]}, type: {type(self.stages[1]).__name__}")
+        
+        x16 = self.stages[2](x8) #[2, 320, 34, 60]
+        print(f"  - After stages[2]: {x16.shape}, channels: {x16.shape[1]}, expected: {self.chans[2]}, type: {type(self.stages[2]).__name__}")
+        
+        x32 = self.stages[3](x16) #[2, 304, 17, 30]
+        print(f"  - After stages[3]: {x32.shape}, channels: {x32.shape[1]}, expected: {self.chans[3]}, type: {type(self.stages[3]).__name__}")
 
         x16 = self.deconv32_16(x32, x16)
         x8 = self.deconv16_8(x16, x8)
         x4 = self.deconv8_4(x8, x4)
-        x4 = torch.cat([x4, vit_feat], dim=1)
+        x4 = torch.cat([x4, vit_feat], dim=1) # 学习cNN与DINO特征的交互
         x4 = self.conv4(x4)
         return [x4, x8, x16, x32], vit_feat
 

@@ -198,10 +198,23 @@ class FoundationStereo(nn.Module, huggingface_hub.PyTorchModelHubMixin):
         image1 = normalize_image(image1)
         image2 = normalize_image(image2)
         with autocast(enabled=self.args.mixed_precision):
+            input = torch.cat([image1, image2], dim=0)
+            print("="*80)
+            print(f"[FoundationStereo] [forward]Input images shape: image1:{image1.shape}, image2:{image2.shape}") # image1:torch.Size([1, 3, 544, 960]), image2:torch.Size([1, 3, 544, 960])
+            print(f"[FoundationStereo] Input images concatenated: {input.shape}") # [2, 3, 544, 960]
             out, vit_feat = self.feature(torch.cat([image1, image2], dim=0))
+            print(f"[FoundationStereo] Backbone output - vit_feat shape: {vit_feat.shape}") # [2, 128, 136, 240]
+            print(f"[FoundationStereo] Backbone output - number of feature levels: {len(out)}") # 4
+            for i, feat in enumerate(out):
+                print(f"[FoundationStereo] Backbone output - level {i} shape: {feat.shape}") 
+
             vit_feat = vit_feat[:B]
             features_left = [o[:B] for o in out]
             features_right = [o[B:] for o in out]
+            print(f"[FoundationStereo] splitting left/right images:")
+            print(f"  - vit_feat shape: {vit_feat.shape}")
+            for i, (fl, fr) in enumerate(zip(features_left, features_right)):
+                print(f"  - Level {i}: left={fl.shape}, right={fr.shape}")
             stem_2x = self.stem_2(image1)
 
             gwc_volume = build_gwc_volume(features_left[0], features_right[0], self.args.max_disp//4, self.cv_group)  # Group-wise correlation volume (B, N_group, max_disp, H, W)
